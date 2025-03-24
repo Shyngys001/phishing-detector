@@ -11,7 +11,7 @@
       resultDiv.textContent = 'Проверка...';
 
       try {
-        const res = await fetch('https://phishing-detector.onrender.com/predict', {
+        const res = await fetch('https://phishing-detector-0okz.onrender.com/predict', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url_or_text: input })
