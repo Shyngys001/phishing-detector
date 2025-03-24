@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phishing Detector</title>
+  <script>
+    async function checkPhishing() {
+      const input = document.getElementById('textInput').value;
+      const resultDiv = document.getElementById('result');
+      resultDiv.textContent = 'Проверка...';
+
+      try {
+        const res = await fetch('http://127.0.0.1:8000/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url_or_text: input })
+        });
+        const data = await res.json();
+        resultDiv.textContent = `Результат: ${data.result}`;
+        resultDiv.style.color = data.result === 'Phishing' ? 'red' : 'green';
+      } catch (error) {
+        resultDiv.textContent = 'Ошибка при проверке.';
+        resultDiv.style.color = 'gray';
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 50px;
+      background: #f4f4f4;
+    }
+    textarea {
+      width: 300px;
+      height: 100px;
+      padding: 10px;
+      font-size: 16px;
+    }
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #result {
+      margin-top: 20px;
+      font-size: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🛡️ Phishing Detector</h1>
+  <p>Введите URL или текст письма:</p>
+  <textarea id="textInput" placeholder="https://example.com или сообщение..."></textarea>
+  <br />
+  <button onclick="checkPhishing()">Проверить</button>
+  <div id="result"></div>
+</body>
+</html>
