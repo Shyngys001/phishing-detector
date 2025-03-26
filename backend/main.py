@@ -28,13 +28,6 @@ MODEL_PATH = os.path.join(BASE_DIR, "phishing_model.pkl")
 # Функция генерирует N=1000 строк для датасета
 # ----------------------------------------------------
 def generate_large_dataset(n=1000):
-    """
-    Возвращает строки CSV вида:
-       text,label
-       "какой-то текст",0 или 1
-    где label=1 ~ фишинг, label=0 ~ легитимный
-    """
-
     phishing_patterns = [
         "Verify your account at {link}",
         "Important: payment update required at {link}",
@@ -59,7 +52,6 @@ def generate_large_dataset(n=1000):
         "Share your feedback at {link}",
         "Learn more about our solutions: {link}"
     ]
-
     phishing_domains = [
         "login-securebank.com", "payment-update.com", "free-offer.net", "bank-verify.org",
         "click4prize.io", "secure-check.org", "verify-account.me", "urgent-update.net"
@@ -70,11 +62,8 @@ def generate_large_dataset(n=1000):
     ]
 
     lines = ["text,label"]  # заголовок CSV
-
     for i in range(n):
-        # 50% фишинг, 50% легитим
         is_phishing = random.random() < 0.5
-
         if is_phishing:
             pattern = random.choice(phishing_patterns)
             domain = random.choice(phishing_domains)
@@ -88,13 +77,12 @@ def generate_large_dataset(n=1000):
             text = pattern.format(link=link)
             label = 0
 
-        # С вероятностью 5% убираем ссылку совсем
+        # 5% убираем ссылку
         if random.random() < 0.05:
-            text = text.split(":")[0]  # отрезаем часть с ссылкой
+            text = text.split(":")[0]
 
         text_escaped = text.replace('"', '""')  # экранируем кавычки
         lines.append(f"\"{text_escaped}\",{label}")
-
     return "\n".join(lines)
 
 # ----------------------------------------------------
@@ -107,16 +95,12 @@ def create_csv():
     logging.info(f"Сгенерирован phishing.csv на 1000 строк: {DATASET_PATH}")
 
 # ----------------------------------------------------
-# Функция извлечения 4 признаков из текста
+# Извлекаем 4 признака из текста
 # ----------------------------------------------------
 def extract_features(text: str):
-    # 1) has_https
     has_https = int('https' in text.lower())
-    # 2) длина строки
     text_len = len(text)
-    # 3) число точек
     num_dots = text.count('.')
-    # 4) есть ли подозрительные слова
     suspicious_keywords = ['login', 'verify', 'bank', 'click', 'payment', 'update', 'free']
     contains_keywords = int(any(word in text.lower() for word in suspicious_keywords))
     return [has_https, text_len, num_dots, contains_keywords]
@@ -140,46 +124,50 @@ def train_model():
     return model
 
 # ----------------------------------------------------
-# Создаём/обновляем CSV, обучаем/загружаем модель
+# 1. Создаём/обновляем CSV, 2. Загружаем/обучаем модель
+#    -- ВАЖНО: это делаем при импорте, но app объявляем
+#       на уровне модуля, чтобы Render мог найти
+# ----------------------------------------------------
+create_csv()
+if os.path.exists(MODEL_PATH):
+    try:
+        model = joblib.load(MODEL_PATH)
+        logging.info("✅ Модель загружена из файла phishing_model.pkl.")
+    except Exception as e:
+        logging.warning(f"⚠️ Не удалось загрузить модель: {e}. Переобучаем...")
+        model = train_model()
+else:
+    model = train_model()
+
+# ----------------------------------------------------
+# САМ APP = FastAPI, на уровне модуля
+# ----------------------------------------------------
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class InputData(BaseModel):
+    url_or_text: str
+
+@app.post("/predict")
+def predict_phishing(data: InputData):
+    try:
+        features = extract_features(data.url_or_text)
+        prediction = model.predict([features])[0]
+        result = "Phishing" if prediction == 1 else "Legitimate"
+        return {"result": result}
+    except Exception as e:
+        logging.error(f"Ошибка при предсказании: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ----------------------------------------------------
+# Точка входа (для локального запуска)
+# На Render указывать: backend.main:app
 # ----------------------------------------------------
 if __name__ == "__main__":
-    # 1. Генерируем CSV
-    create_csv()
-
-    # 2. Обучаем или загружаем модель
-    if os.path.exists(MODEL_PATH):
-        try:
-            model = joblib.load(MODEL_PATH)
-            logging.info("✅ Модель загружена из файла phishing_model.pkl.")
-        except Exception as e:
-            logging.warning(f"⚠️ Не удалось загрузить модель: {e}. Переобучаем...")
-            model = train_model()
-    else:
-        model = train_model()
-
-    # 3. Запускаем FastAPI
-    app = FastAPI()
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    class InputData(BaseModel):
-        url_or_text: str
-
-    @app.post("/predict")
-    def predict_phishing(data: InputData):
-        try:
-            features = extract_features(data.url_or_text)
-            prediction = model.predict([features])[0]
-            result = "Phishing" if prediction == 1 else "Legitimate"
-            return {"result": result}
-        except Exception as e:
-            logging.error(f"Ошибка при предсказании: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-    # Запускаем сервер Uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
