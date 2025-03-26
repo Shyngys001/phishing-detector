@@ -9,24 +9,12 @@ from pydantic import BaseModel
 from sklearn.ensemble import RandomForestClassifier
 import uvicorn
 
-# ----------------------------------------------------
-# Настройки логирования
-# ----------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-# ----------------------------------------------------
-# Пути к файлам
-# ----------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASET_PATH = os.path.join(BASE_DIR, "phishing.csv")
 MODEL_PATH = os.path.join(BASE_DIR, "phishing_model.pkl")
 
-# ----------------------------------------------------
-# Функция генерирует N=1000 строк для датасета
-# ----------------------------------------------------
 def generate_large_dataset(n=1000):
     phishing_patterns = [
         "Verify your account at {link}",
@@ -81,22 +69,16 @@ def generate_large_dataset(n=1000):
         if random.random() < 0.05:
             text = text.split(":")[0]
 
-        text_escaped = text.replace('"', '""')  # экранируем кавычки
+        text_escaped = text.replace('"', '""')
         lines.append(f"\"{text_escaped}\",{label}")
     return "\n".join(lines)
 
-# ----------------------------------------------------
-# Генерация CSV-файла на 1000 строк
-# ----------------------------------------------------
 def create_csv():
     dataset = generate_large_dataset(n=1000)
     with open(DATASET_PATH, "w", encoding="utf-8") as f:
         f.write(dataset)
     logging.info(f"Сгенерирован phishing.csv на 1000 строк: {DATASET_PATH}")
 
-# ----------------------------------------------------
-# Извлекаем 4 признака из текста
-# ----------------------------------------------------
 def extract_features(text: str):
     has_https = int('https' in text.lower())
     text_len = len(text)
@@ -105,9 +87,6 @@ def extract_features(text: str):
     contains_keywords = int(any(word in text.lower() for word in suspicious_keywords))
     return [has_https, text_len, num_dots, contains_keywords]
 
-# ----------------------------------------------------
-# Обучение модели
-# ----------------------------------------------------
 def train_model():
     logging.info("⏳ Обучаем модель с нуля на 1000 строках...")
     df = pd.read_csv(DATASET_PATH)
@@ -123,11 +102,7 @@ def train_model():
     logging.info("✅ Модель обучена и сохранена в phishing_model.pkl.")
     return model
 
-# ----------------------------------------------------
-# 1. Создаём/обновляем CSV, 2. Загружаем/обучаем модель
-#    -- ВАЖНО: это делаем при импорте, но app объявляем
-#       на уровне модуля, чтобы Render мог найти
-# ----------------------------------------------------
+# Создаём CSV, загружаем/обучаем модель
 create_csv()
 if os.path.exists(MODEL_PATH):
     try:
@@ -139,9 +114,7 @@ if os.path.exists(MODEL_PATH):
 else:
     model = train_model()
 
-# ----------------------------------------------------
-# САМ APP = FastAPI, на уровне модуля
-# ----------------------------------------------------
+# FastAPI-приложение
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -165,9 +138,13 @@ def predict_phishing(data: InputData):
         logging.error(f"Ошибка при предсказании: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ----------------------------------------------------
-# Точка входа (для локального запуска)
-# На Render указывать: backend.main:app
-# ----------------------------------------------------
+# Добавим эндпоинт для корня, чтобы 404 не было
+@app.get("/")
+def root():
+    return {"message": "Hello! The server is up and running."}
+
+# Локально запускать так:
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # Если переменной среды PORT нет, берём 8000
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
